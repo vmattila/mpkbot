@@ -4,18 +4,22 @@ import * as cdk from 'aws-cdk-lib';
 import { MpkbotStack } from '../lib/mpkbot-stack';
 
 const app = new cdk.App();
-new MpkbotStack(app, 'MpkbotStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+new MpkbotStack(app, 'MpkbotStack-Dev', {
+  env: { account: '153157004393', region: 'eu-north-1' },
+  crossRegionReferences: true,
+}, {
+  route53zone: 'mpkbot.fi',
+  domain: 'dev.mpkbot.fi',
+  environmentInfo: '[DEV]',
+});
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
-
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
+new MpkbotStack(app, 'MpkbotStack-Prod', {
+  env: { account: '153157004393', region: 'eu-north-1' },
+  crossRegionReferences: true,
+}, {
+  route53zone: 'mpkbot.fi',
+  domain: 'beta.mpkbot.fi',
+  production: true,
+  environmentInfo: '',
 });
