@@ -2,7 +2,7 @@ import { Index } from 'flexsearch';
 import { scanTable } from '../dynamodb/scan-query-table';
 export let courseIndex = new Index({
   tokenize: "forward",
-  minlength: 2
+  minlength: 3
 });
 export let courseMap = new Map();
 export let currentIndexVersion: number = 0;
@@ -22,7 +22,7 @@ export const populateCourseIndex = async (force?: boolean) => {
   
   courseIndex = new Index({
     tokenize: "forward",
-    minlength: 2
+    minlength: 3
   });
   courseMap = new Map();
 
