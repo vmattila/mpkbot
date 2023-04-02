@@ -247,7 +247,7 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     entry: path.join(__dirname, `/../functions/notification-runner.ts`),
     handler: "handleSqsHandleNotificationEvent",
     environment: commonLambdaEnvs,
-    timeout: cdk.Duration.seconds(15),
+    timeout: cdk.Duration.minutes(1),
     readTables: [coursesTable, notificationSubsTable, statusTable],
     rwTables: [notificationTable],
     allowSesSendTemplates: [notificationTemplate],
