@@ -1,0 +1,10 @@
+{
+  "hosted-zone:account=153157004393:domainName=mpkbot.fi:region=eu-north-1": {
+    "Id": "/hostedzone/Z101252530KRX9IPT1PBW",
+    "Name": "mpkbot.fi."
+  },
+  "hosted-zone:account=153157004393:domainName=mpkbot.fi:region=us-east-1": {
+    "Id": "/hostedzone/Z101252530KRX9IPT1PBW",
+    "Name": "mpkbot.fi."
+  }
+}

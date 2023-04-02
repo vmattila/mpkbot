@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs"
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
@@ -20,6 +21,7 @@ export interface AppLambdaFunctionProps extends cdk.StackProps {
     timeout?: cdk.Duration
     schedule?: Schedule
     reservedConcurrentExecutions?: number
+    allowCognitoAdminToPool?: cognito.UserPool
   }
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { SesTemplate } from './ses-template';
@@ -61,7 +63,7 @@ export class AppLambdaFunction extends Construct {
       if (props.allowSesSendTemplates) {
         for (const template of props.allowSesSendTemplates) {
           const allowSesSendTemplatePolicy = new iam.PolicyStatement({
-              actions: ['s3:SendTemplatedEmail'],
+              actions: ['ses:SendTemplatedEmail'],
               resources: [
                 `arn:aws:ses:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:template/${template.templateName}`,
                 `arn:aws:ses:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:identity/*`,
@@ -73,6 +75,17 @@ export class AppLambdaFunction extends Construct {
             }),
           );
         }
+      }
+      if (props.allowCognitoAdminToPool) {
+        const allowCognitoAdminPolicy = new iam.PolicyStatement({
+          actions: ['cognito-idp:AdminGetUser','cognito-idp:AdminDeleteUser'],
+          resources: [props.allowCognitoAdminToPool.userPoolArn],
+        });
+        nodejsFunction.role?.attachInlinePolicy(
+          new iam.Policy(this, 'AllowCognitoAdmin', {
+            statements: [allowCognitoAdminPolicy],
+          }),
+        );
       }
       this.function = nodejsFunction;
     }

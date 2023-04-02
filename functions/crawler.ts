@@ -8,6 +8,7 @@ const sqs = new AWS.SQS();
 import { Handler } from 'aws-lambda';
 
 import * as crypto from 'crypto';
+import { triggerCourseIndexUpdated } from './courseindex/courseindex';
 
 const crawlCourseListing = async (unitId, startDate, lastCourseId) => {
   const start = startDate.format('DD.MM.YYYY');
@@ -48,7 +49,7 @@ const crawlCourseListing = async (unitId, startDate, lastCourseId) => {
   }
 }
 
-const getCourseJsonHash = (courseJsonItem) => {
+const getCourseJsonHash = (courseJsonItem: any) => {
   // Muunnetaan kurssi-jsonin keyt aakkosiin -> yhtenäinen json
   const itm = Object.keys(courseJsonItem)
     .sort()
@@ -56,10 +57,14 @@ const getCourseJsonHash = (courseJsonItem) => {
       acc[key] = courseJsonItem[key];
       return acc;
     }, {});
-  return crypto.createHash('sha256').update(JSON.stringify(itm)).digest('hex');
+
+  let hash: string = crypto.createHash('sha256').update(JSON.stringify(itm)).digest('hex');
+  hash += `,2`;
+
+  return hash;
 }
 
-const updateCourseFromJson = async (courseId, courseJsonItem) => {
+const updateCourseFromJson = async (courseId: number, courseJsonItem: any) => {
   const jsonHash = getCourseJsonHash(courseJsonItem);
 
   const courseName = courseJsonItem.Nimi;
@@ -98,7 +103,7 @@ const updateCourseFromJson = async (courseId, courseJsonItem) => {
   }
 }
 
-const pushToCrawl = async (courseId, courseJsonItem) => {
+const pushToCrawl = async (courseId: number, courseJsonItem: any) => {
   console.log(`Course ${courseId} ${courseJsonItem.Nimi} pushing to re-crawl.`);
   await dynamodb.updateItem(
     {
@@ -122,7 +127,7 @@ const pushToCrawl = async (courseId, courseJsonItem) => {
   }).promise();
 }
 
-const doCourseCrawl = async (courseId, courseJsonItem) => {
+const doCourseCrawl = async (courseId: number, courseJsonItem: any) => {
   const jsonHash = getCourseJsonHash(courseJsonItem);
   const response = await axios.get(`https://koulutuskalenteri.mpk.fi/Default.aspx?tabid=1054&id=${courseId}`);
   const responseData = response.data;
@@ -152,6 +157,8 @@ const doCourseCrawl = async (courseId, courseJsonItem) => {
 
   const teksti = [tavoite,soveltuvuus,esitiedot,sis].join("\n\n");
 
+  const ttlTime = loppuaika ? loppuaika + 3600 * 24 : courseJsonItem.Alkuaika + 3600 * 24;
+
   await dynamodb.putItem(
     {
         TableName: process.env.COURSES_DYNAMODB_TABLE,
@@ -162,6 +169,7 @@ const doCourseCrawl = async (courseId, courseJsonItem) => {
             Location: {S: paikka},
             StartTime: {N: courseJsonItem.Alkuaika.toString()},
             EndTime: loppuaika ? {N: loppuaika.toString()} : {NULL: true},
+            TTLTime: {N: ttlTime.toString()},
             TimeInfo: {S: ajankohta},
             IntroText:{S: teksti},
             JsonHash: {S: jsonHash},
@@ -169,8 +177,8 @@ const doCourseCrawl = async (courseId, courseJsonItem) => {
         }
     }).promise();
   console.log(`Course ${courseId} ${courseName} successfully ingested to DynamoDB`);
+  await triggerCourseIndexUpdated();
 }
-
 
 export const crawl: Handler = async (event) => {
   //await crawlCoursePage(161327);

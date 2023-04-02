@@ -44,12 +44,7 @@ export class RestApiLambdaFunction extends Construct {
     super(scope, id);
 
     const nodejsFunction = new AppLambdaFunction(this, 'Fn', {
-      entry: props.entry,
-      handler: props.handler,
-      environment: props.environment,
-      rwTables: props.rwTables,
-      readTables: props.readTables,
-      timeout: props.timeout,
+      ...props
     });
 
     const methodOptions = {} as any;
@@ -76,13 +71,27 @@ export class MpkbotStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(300)
     });
 
+    // Crawl Queue
+    const notificationsQueue = new sqs.Queue(this, 'NotificationsQueue', {
+      visibilityTimeout: cdk.Duration.seconds(300)
+    });
+
     // DynamoDB Tables
+    const statusTable = new dynamodb.Table(this, 'Status', { 
+      partitionKey: { name: 'StatusKey', type: dynamodb.AttributeType.STRING }, 
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      pointInTimeRecovery: false,
+      tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
+    });
+
     const coursesTable = new dynamodb.Table(this, 'Courses', { 
       partitionKey: { name: 'CourseId', type: dynamodb.AttributeType.NUMBER }, 
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       pointInTimeRecovery: false,
       tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
+      timeToLiveAttribute: "TTLTime"
     });
 
     const notificationSubsTable = new dynamodb.Table(this, 'NotificationSubscriptions', { 
@@ -106,7 +115,14 @@ export class MpkbotStack extends cdk.Stack {
       indexName: 'CourseIdIndex',
       sortKey: {name: 'CourseId', type: dynamodb.AttributeType.NUMBER},
       projectionType: dynamodb.ProjectionType.ALL
-   });
+    });
+    notificationTable.addLocalSecondaryIndex({
+      indexName: 'TriggeredSubscriptionIndex',
+      sortKey: {name: 'TriggeredSubscription', type: dynamodb.AttributeType.STRING},
+      projectionType: dynamodb.ProjectionType.ALL
+    });
+
+    const emailAddress = `kirjaamo@${stackConfig.route53zone}`;
 
   const userPool = new cognito.UserPool(this, 'Users', {
     removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -116,6 +132,11 @@ export class MpkbotStack extends cdk.Stack {
       username: false,
       email: true,
       phone: false,
+    },
+    mfa: cognito.Mfa.OPTIONAL,
+    mfaSecondFactor: {
+      sms: false,
+      otp: true,
     },
     userVerification: {
       emailSubject: `Vahvista sähköpostiosoitteesi käyttääksesi MPKBottia ${stackConfig.environmentInfo}`.trim(),
@@ -129,10 +150,10 @@ export class MpkbotStack extends cdk.Stack {
       //smsMessage: 'Hei {username}, väliaikainen MPKBot-salasanasi on {####}',
     },
     email: cognito.UserPoolEmail.withSES({
-      fromEmail: 'no-reply@mpkbot.fi',
-      fromName: 'MPKBot',
-      replyTo: 'kirjaamo@mpkbot.fi',
-      sesVerifiedDomain: 'mpkbot.fi',
+      fromEmail: `no-reply@${stackConfig.route53zone}`,
+      fromName: `MPKBot ${stackConfig.environmentInfo}`.trim(),
+      replyTo: emailAddress,
+      sesVerifiedDomain: stackConfig.route53zone,
     }),
   });
 
@@ -179,10 +200,13 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     USER_NOTIFICATIONS_DYNAMODB_TABLE: notificationTable.tableName,
     USER_NOTIFICATION_SUBSCRIPTIONS_DYNAMODB_TABLE: notificationSubsTable.tableName,
     SQS_CRAWL_QUEUE_URL: crawlQueue.queueUrl,
+    SQS_NOTIFICATION_QUEUE_URL: notificationsQueue.queueUrl,
     COGNITO_USER_POOL_ID: userPool.userPoolId,
     COGNITO_USER_POOL_CLIENT_ID: userPoolApiClient.userPoolClientId,
     COGNITO_USER_POOL_CLIENT_SECRET: userPoolApiClient.userPoolClientSecret.unsafeUnwrap(),
     NOTIFICATION_SES_TEMPLATE_NAME: notificationTemplate.templateName,
+    SES_SENDER: emailAddress,
+    STATUS_DYNAMODB_TABLE: statusTable.tableName,
   }
 
    // Lambda Functions
@@ -192,7 +216,7 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     environment: commonLambdaEnvs,
     timeout: cdk.Duration.minutes(10),
     schedule: Schedule.rate(cdk.Duration.hours(3)),
-    rwTables: [coursesTable],
+    rwTables: [coursesTable, statusTable],
     publishesToQueues: [crawlQueue],
     reservedConcurrentExecutions: 1,
   });
@@ -202,21 +226,35 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     handler: "handleSqsCrawlEvent",
     environment: commonLambdaEnvs,
     timeout: cdk.Duration.minutes(1),
-    rwTables: [coursesTable],
+    rwTables: [coursesTable, statusTable],
     reservedConcurrentExecutions: 2,
   });
   handleCrawlQueueFunction.function.addEventSource(new SqsEventSource(crawlQueue));
 
    new AppLambdaFunction(this, "RunNotifications",{
-    entry: path.join(__dirname, `/../functions/notifications.ts`),
+    entry: path.join(__dirname, `/../functions/notification-runner.ts`),
     handler: "runNotifications",
     environment: commonLambdaEnvs,
     timeout: cdk.Duration.minutes(10),
     schedule: Schedule.rate(cdk.Duration.hours(1)),
-    readTables: [coursesTable, notificationSubsTable],
+    readTables: [coursesTable, notificationSubsTable, statusTable],
     rwTables: [notificationTable],
     allowSesSendTemplates: [notificationTemplate],
+    allowCognitoAdminToPool: userPool,
   });
+
+  const handleNotificationsQueueFunction = new AppLambdaFunction(this, "HandleNotificationQueue", {
+    entry: path.join(__dirname, `/../functions/notification-runner.ts`),
+    handler: "handleSqsHandleNotificationEvent",
+    environment: commonLambdaEnvs,
+    timeout: cdk.Duration.seconds(15),
+    readTables: [coursesTable, notificationSubsTable, statusTable],
+    rwTables: [notificationTable],
+    allowSesSendTemplates: [notificationTemplate],
+    allowCognitoAdminToPool: userPool,
+    reservedConcurrentExecutions: 2,
+  });
+  handleNotificationsQueueFunction.function.addEventSource(new SqsEventSource(notificationsQueue));
 
   // API
   const api = new apigw.RestApi(this, 'Api', {
@@ -239,6 +277,7 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     entry: path.join(__dirname, `/../functions/info.ts`),
     handler: "showPublicInfo",
     environment: commonLambdaEnvs,
+    readTables: [statusTable],
   });
 
   const coursesRoot = api.root.addResource('courses');
@@ -249,7 +288,18 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     handler: "getCourses",
     timeout: cdk.Duration.seconds(29),
     environment: commonLambdaEnvs,
-    readTables: [coursesTable],
+    readTables: [coursesTable, statusTable],
+    authorizer: cognitoAuthorizer,
+  });
+
+  const notificationsRoot = api.root.addResource('notifications');
+  new RestApiLambdaFunction(this, "GetMyNotifications", {
+    resource: notificationsRoot,
+    method: "GET",
+    entry: path.join(__dirname, `/../functions/notification-runner.ts`),
+    handler: "getMyNotifiedCourses",
+    environment: commonLambdaEnvs,
+    readTables: [notificationTable, coursesTable, statusTable],
     authorizer: cognitoAuthorizer,
   });
 
@@ -257,7 +307,7 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
   new RestApiLambdaFunction(this, "GetSubscriptions", {
     resource: subsriptionsRoot,
     method: "GET",
-    entry: path.join(__dirname, `/../functions/notifications.ts`),
+    entry: path.join(__dirname, `/../functions/subscriptions.ts`),
     handler: "getSubscriptions",
     environment: commonLambdaEnvs,
     rwTables: [notificationSubsTable],
@@ -266,24 +316,37 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
   new RestApiLambdaFunction(this, "AddSubscription", {
     resource: subsriptionsRoot,
     method: "POST",
-    entry: path.join(__dirname, `/../functions/notifications.ts`),
+    entry: path.join(__dirname, `/../functions/subscriptions.ts`),
     handler: "addSubscription",
     environment: commonLambdaEnvs,
     rwTables: [notificationSubsTable],
     authorizer: cognitoAuthorizer,
+    publishesToQueues: [notificationsQueue],
   });
 
   const subsriptionRoot = subsriptionsRoot.addResource('{subscriptionId}');
   new RestApiLambdaFunction(this, "DeleteSubscription", {
     resource: subsriptionRoot,
     method: "DELETE",
-    entry: path.join(__dirname, `/../functions/notifications.ts`),
+    entry: path.join(__dirname, `/../functions/subscriptions.ts`),
     handler: "deleteSubscription",
     environment: commonLambdaEnvs,
-    rwTables: [notificationSubsTable],
+    rwTables: [notificationSubsTable, notificationTable],
     authorizer: cognitoAuthorizer,
   });
 
+  const meRoot = api.root.addResource('me');
+  new RestApiLambdaFunction(this, "DeleteUser", {
+    resource: meRoot,
+    method: "DELETE",
+    entry: path.join(__dirname, `/../functions/subscriptions.ts`),
+    handler: "deleteMyself",
+    environment: commonLambdaEnvs,
+    rwTables: [notificationSubsTable, notificationTable],
+    authorizer: cognitoAuthorizer,
+    allowCognitoAdminToPool: userPool,
+    timeout: cdk.Duration.seconds(29),
+  });
 
   const authDomainName = `auth.${stackConfig.domain}`;
   const userPoolCertificate = new acm.DnsValidatedCertificate(this,

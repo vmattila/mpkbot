@@ -5,11 +5,8 @@ import { Handler, Context, APIGatewayProxyResult, APIGatewayEvent } from 'aws-la
 export const getCourses: Handler = async (event: APIGatewayEvent, context: Context): Promise<APIGatewayProxyResult> => {
   await populateCourseIndex();
 
-  console.log(event.requestContext.authorizer?.claims.sub);
-
   const courses = await findCourses(
-    event.queryStringParameters?.keywords?.trim(),
-    event.queryStringParameters?.not_keywords?.trim(),
+    JSON.parse(event.queryStringParameters?.tokens || ""),
   );
 
   return {
