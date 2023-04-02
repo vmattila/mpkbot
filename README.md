@@ -1,14 +1,6 @@
-# Welcome to your CDK TypeScript project
+# MPK Bot
 
-This is a blank project for CDK development with TypeScript.
+Tämä repository pitää sisällään MPK Bot -palvelun lähdekoodit. Löydät palvelun osoitteesta
+https://beta.mpkbot.fi/
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
-
-## Useful commands
-
-* `npm run build`   compile typescript to js
-* `npm run watch`   watch for changes and compile
-* `npm run test`    perform the jest unit tests
-* `cdk deploy`      deploy this stack to your default AWS account/region
-* `cdk diff`        compare deployed stack with current state
-* `cdk synth`       emits the synthesized CloudFormation template
+Palvelun käyttöliittymän lähdekoodit löytyvät erillisestä repositorystä: https://github.com/vmattila/mpkbot-ui
