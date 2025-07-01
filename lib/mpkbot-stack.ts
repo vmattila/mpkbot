@@ -2,7 +2,6 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigw from 'aws-cdk-lib/aws-apigateway';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as route53 from 'aws-cdk-lib/aws-route53';
@@ -12,19 +11,13 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import {S3Origin} from 'aws-cdk-lib/aws-cloudfront-origins';
 import {UserPoolDomainTarget} from 'aws-cdk-lib/aws-route53-targets';
-import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs"
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
-import {CfnParameter} from 'aws-cdk-lib';
 import path = require('node:path');
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import { CiCdSetup } from './cicd-setup';
-import { ReadWriteType } from 'aws-cdk-lib/aws-cloudtrail';
-import { ApiGateway } from 'aws-cdk-lib/aws-events-targets';
-import { RetentionDays } from 'aws-cdk-lib/aws-logs';
-import {Rule, Schedule} from 'aws-cdk-lib/aws-events';
-import { aws_ses as ses } from 'aws-cdk-lib';
+import { Schedule } from 'aws-cdk-lib/aws-events';
 import { AppLambdaFunction, AppLambdaFunctionProps } from './app-lambda-function-base';
-import { SesTemplate } from './ses-template';
+import { EmailConfiguration } from './email-configuration';
 
 export interface MpkStackConfiguration {
   route53zone: string;
@@ -76,51 +69,51 @@ export class MpkbotStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(300)
     });
 
-    // DynamoDB Tables
-    const statusTable = new dynamodb.Table(this, 'Status', { 
-      partitionKey: { name: 'StatusKey', type: dynamodb.AttributeType.STRING }, 
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      pointInTimeRecovery: false,
-      tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
-    });
+   // DynamoDB Tables
+   const statusTable = new dynamodb.Table(this, 'Status', { 
+    partitionKey: { name: 'StatusKey', type: dynamodb.AttributeType.STRING }, 
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+    pointInTimeRecovery: false,
+    tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
+  });
 
-    const coursesTable = new dynamodb.Table(this, 'Courses', { 
-      partitionKey: { name: 'CourseId', type: dynamodb.AttributeType.NUMBER }, 
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      pointInTimeRecovery: false,
-      tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
-      timeToLiveAttribute: "TTLTime"
-    });
+  const coursesTable = new dynamodb.Table(this, 'Courses', { 
+    partitionKey: { name: 'CourseId', type: dynamodb.AttributeType.NUMBER }, 
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+    pointInTimeRecovery: false,
+    tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
+    timeToLiveAttribute: "TTLTime"
+  });
 
-    const notificationSubsTable = new dynamodb.Table(this, 'NotificationSubscriptions', { 
-      partitionKey: { name: 'UserId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'SubscriptionId', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      pointInTimeRecovery: false,
-      tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
-    });
+  const notificationSubsTable = new dynamodb.Table(this, 'NotificationSubscriptions', { 
+    partitionKey: { name: 'UserId', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'SubscriptionId', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+    pointInTimeRecovery: false,
+    tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
+  });
 
-    const notificationTable = new dynamodb.Table(this, 'Notifications', { 
-      partitionKey: { name: 'UserId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'CourseId', type: dynamodb.AttributeType.NUMBER },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      pointInTimeRecovery: false,
-      tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
-    });
-    notificationTable.addLocalSecondaryIndex({
-      indexName: 'CourseIdIndex',
-      sortKey: {name: 'CourseId', type: dynamodb.AttributeType.NUMBER},
-      projectionType: dynamodb.ProjectionType.ALL
-    });
-    notificationTable.addLocalSecondaryIndex({
-      indexName: 'TriggeredSubscriptionIndex',
-      sortKey: {name: 'TriggeredSubscription', type: dynamodb.AttributeType.STRING},
-      projectionType: dynamodb.ProjectionType.ALL
-    });
+  const notificationTable = new dynamodb.Table(this, 'Notifications', { 
+    partitionKey: { name: 'UserId', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'CourseId', type: dynamodb.AttributeType.NUMBER },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, 
+    removalPolicy: cdk.RemovalPolicy.DESTROY,
+    pointInTimeRecovery: false,
+    tableClass: dynamodb.TableClass.STANDARD_INFREQUENT_ACCESS,
+  });
+  notificationTable.addLocalSecondaryIndex({
+    indexName: 'CourseIdIndex',
+    sortKey: {name: 'CourseId', type: dynamodb.AttributeType.NUMBER},
+    projectionType: dynamodb.ProjectionType.ALL
+  });
+  notificationTable.addLocalSecondaryIndex({
+    indexName: 'TriggeredSubscriptionIndex',
+    sortKey: {name: 'TriggeredSubscription', type: dynamodb.AttributeType.STRING},
+    projectionType: dynamodb.ProjectionType.ALL
+  });
 
     const emailAddress = `kirjaamo@${stackConfig.route53zone}`;
 
@@ -165,35 +158,9 @@ export class MpkbotStack extends cdk.Stack {
     generateSecret: true,
   });
 
-  const notificationTemplate = new SesTemplate(this, "NotificationTemplate", {
-
-  subjectPart: `Uusia MPK-kursseja hakusanalla {{keyword}} ${stackConfig.environmentInfo}`.trim(),
-
-      // the properties below are optional
-      htmlPart: `<p>Tämä on automaattinen viesti mpkbotilta.</p>
-
-      <p>Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.</p>
-
-      {{#each courses}}
-        <p>
-          <strong>{{name}}</strong><br />
-          {{timeinfo}} @ {{location}}<br />
-          Lisätietoja: <a href="{{link}}">{{link}}</a>
-        </p>
-      {{/each}}
-      <hr>`,
-
-      textPart: `Tämä on automaattinen viesti mpkbotilta.
-
-Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
-
-{{#each courses}}
-  {{name}}
-  {{timeinfo}} @ {{location}}
-  Lisätietoja: {{link}}
-  -
-{{/each}}`,
-    });
+  const emailConfiguration = new EmailConfiguration(this, 'MpkBotEmail', {
+    environmentInfo: stackConfig.environmentInfo,
+  })
 
   const commonLambdaEnvs = {
     COURSES_DYNAMODB_TABLE: coursesTable.tableName,
@@ -204,7 +171,7 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     COGNITO_USER_POOL_ID: userPool.userPoolId,
     COGNITO_USER_POOL_CLIENT_ID: userPoolApiClient.userPoolClientId,
     COGNITO_USER_POOL_CLIENT_SECRET: userPoolApiClient.userPoolClientSecret.unsafeUnwrap(),
-    NOTIFICATION_SES_TEMPLATE_NAME: notificationTemplate.templateName,
+    NOTIFICATION_SES_TEMPLATE_NAME: emailConfiguration.notificationTemplate.templateName,
     SES_SENDER: emailAddress,
     STATUS_DYNAMODB_TABLE: statusTable.tableName,
   }
@@ -229,7 +196,9 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     rwTables: [coursesTable, statusTable],
     reservedConcurrentExecutions: 2,
   });
-  handleCrawlQueueFunction.function.addEventSource(new SqsEventSource(crawlQueue));
+  handleCrawlQueueFunction.function.addEventSource(new SqsEventSource(crawlQueue, {
+    maxConcurrency: 2
+  }));
 
    new AppLambdaFunction(this, "RunNotifications",{
     entry: path.join(__dirname, `/../functions/notification-runner.ts`),
@@ -239,7 +208,7 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     schedule: Schedule.rate(cdk.Duration.hours(1)),
     readTables: [coursesTable, notificationSubsTable, statusTable],
     rwTables: [notificationTable],
-    allowSesSendTemplates: [notificationTemplate],
+    allowSesSendTemplates: [emailConfiguration.notificationTemplate],
     allowCognitoAdminToPool: userPool,
   });
 
@@ -250,11 +219,13 @@ Seuraavia uusia kursseja on löytynyt MPK:n koulutuskalenterista.
     timeout: cdk.Duration.minutes(1),
     readTables: [coursesTable, notificationSubsTable, statusTable],
     rwTables: [notificationTable],
-    allowSesSendTemplates: [notificationTemplate],
+    allowSesSendTemplates: [emailConfiguration.notificationTemplate],
     allowCognitoAdminToPool: userPool,
     reservedConcurrentExecutions: 2,
   });
-  handleNotificationsQueueFunction.function.addEventSource(new SqsEventSource(notificationsQueue));
+  handleNotificationsQueueFunction.function.addEventSource(new SqsEventSource(notificationsQueue, {
+    maxConcurrency: 2
+  }));
 
   // API
   const api = new apigw.RestApi(this, 'Api', {
