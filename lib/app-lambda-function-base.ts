@@ -23,7 +23,7 @@ export interface AppLambdaFunctionProps extends cdk.StackProps {
   reservedConcurrentExecutions?: number;
   allowCognitoAdminToPool?: cognito.UserPool;
 }
-import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
+import { RetentionDays } from "aws-cdk-lib/aws-logs";
 import { SesTemplate } from "./ses-template";
 
 export class AppLambdaFunction extends Construct {
@@ -37,9 +37,7 @@ export class AppLambdaFunction extends Construct {
       entry: props.entry,
       handler: props.handler,
       environment: props.environment,
-      logGroup: new LogGroup(this, `${id}-Logs`, {
-        retention: RetentionDays.ONE_WEEK,
-      }),
+      logRetention: RetentionDays.ONE_WEEK,
       memorySize: 1024,
       timeout: props.timeout,
       reservedConcurrentExecutions: props.reservedConcurrentExecutions,
