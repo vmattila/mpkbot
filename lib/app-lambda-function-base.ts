@@ -33,7 +33,7 @@ export class AppLambdaFunction extends Construct {
     super(scope, id);
 
     const nodejsFunction = new NodejsFunction(this, `Fn`, {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       entry: props.entry,
       handler: props.handler,
       environment: props.environment,
