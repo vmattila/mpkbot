@@ -40,6 +40,7 @@ export class AppLambdaFunction extends Construct {
       logGroup: new LogGroup(this, `${id}-Logs`, {
         retention: RetentionDays.ONE_WEEK,
       }),
+      memorySize: 1024,
       timeout: props.timeout,
       reservedConcurrentExecutions: props.reservedConcurrentExecutions,
     });
